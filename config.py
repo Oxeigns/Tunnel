@@ -7,95 +7,80 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class ValidationResult:
-    is_valid: bool
-    errors: list[str]
-    warnings: list[str]
+class Settings:
+    bot_token: Optional[str]
+    api_id: Optional[int]
+    api_hash: Optional[str]
+    log_group_id: str
+    upload_folder: str
+    pyrogram_workdir: str
+    max_file_size: int
 
 
 class Config:
-    """Application configuration sourced from environment variables.
+    """Runtime configuration loader.
 
-    This class is intentionally tolerant at import time so process managers
-    like Gunicorn can start workers even when runtime secrets are not set yet.
+    Uses os.getenv for safe access, supports local defaults, and never raises at import time.
     """
 
-    BOT_TOKEN: Optional[str] = os.getenv("BOT_TOKEN") or None
-    API_HASH: Optional[str] = os.getenv("API_HASH") or None
-
-    _api_id_raw = os.getenv("API_ID")
-    _log_group_id_raw = os.getenv("LOG_GROUP_ID") or "-1002625483900"
-
-    try:
-        API_ID: Optional[int] = int(_api_id_raw) if _api_id_raw else None
-    except (TypeError, ValueError):
-        API_ID = None
-
-    try:
-        LOG_GROUP_ID: Optional[int] = int(_log_group_id_raw) if _log_group_id_raw else None
-    except (TypeError, ValueError):
-        LOG_GROUP_ID = None
-
     MAX_FILE_SIZE = 50 * 1024 * 1024
-    UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "/tmp/uploads")
-    PYROGRAM_WORKDIR = os.getenv("PYROGRAM_WORKDIR", "/tmp")
+    DEFAULT_API_ID = 123456
+    DEFAULT_API_HASH = "local-dev-api-hash"
+    DEFAULT_LOG_GROUP_ID = "-1000000000000"
 
     @classmethod
-    def validate(cls, raise_on_error: bool = False) -> ValidationResult:
-        """Validate required environment variables without crashing imports.
+    def _use_local_defaults(cls) -> bool:
+        # Heroku sets DYNO; defaults are useful for local smoke testing.
+        return os.getenv("USE_LOCAL_DEFAULTS", "1") == "1" and not os.getenv("DYNO")
 
-        Args:
-            raise_on_error: If True, raises ValueError when required variables
-                are missing/invalid. Keep False in Gunicorn/Heroku startup paths.
+    @classmethod
+    def load(cls) -> Settings:
+        use_defaults = cls._use_local_defaults()
 
-        Returns:
-            ValidationResult with validity, error list, and warning list.
-        """
+        bot_token = os.getenv("BOT_TOKEN")
+        api_hash = os.getenv("API_HASH") or (cls.DEFAULT_API_HASH if use_defaults else None)
+        api_id_raw = os.getenv("API_ID")
+        log_group_id = os.getenv("LOG_GROUP_ID") or (
+            cls.DEFAULT_LOG_GROUP_ID if use_defaults else ""
+        )
 
-        errors: list[str] = []
-        warnings: list[str] = []
+        api_id: Optional[int] = None
+        if api_id_raw:
+            try:
+                api_id = int(api_id_raw)
+            except ValueError:
+                logger.warning("API_ID is set but invalid (must be an integer): %r", api_id_raw)
+        elif use_defaults:
+            api_id = cls.DEFAULT_API_ID
 
-        if not cls.BOT_TOKEN:
-            errors.append("BOT_TOKEN is missing (expected non-empty string).")
-            warnings.append(
-                "BOT_TOKEN is not configured; Telegram bot authentication will fail until set."
-            )
+        return Settings(
+            bot_token=bot_token,
+            api_id=api_id,
+            api_hash=api_hash,
+            log_group_id=log_group_id,
+            upload_folder=os.getenv("UPLOAD_FOLDER", "/tmp/uploads"),
+            pyrogram_workdir=os.getenv("PYROGRAM_WORKDIR", "/tmp"),
+            max_file_size=cls.MAX_FILE_SIZE,
+        )
 
-        if cls.API_ID is None:
-            raw = os.getenv("API_ID")
-            if raw:
-                errors.append(f"API_ID must be an integer, got: {raw!r}.")
-            else:
-                errors.append("API_ID is missing (expected integer).")
-            warnings.append("API_ID is not configured; Pyrogram client cannot start.")
-        elif cls.API_ID <= 0:
-            errors.append(f"API_ID must be a positive integer, got: {cls.API_ID}.")
+    @classmethod
+    def validate_runtime(cls, settings: Settings) -> bool:
+        """Runtime validation that logs warnings instead of raising exceptions."""
+        valid = True
 
-        if not cls.API_HASH:
-            errors.append("API_HASH is missing (expected non-empty string).")
-            warnings.append("API_HASH is not configured; Pyrogram client cannot start.")
+        if settings.api_id is None:
+            logger.warning("Missing or invalid API_ID. Telegram client features are disabled.")
+            valid = False
 
-        if cls.LOG_GROUP_ID is None:
-            raw = os.getenv("LOG_GROUP_ID")
-            if raw:
-                errors.append(f"LOG_GROUP_ID must be an integer, got: {raw!r}.")
-            else:
-                errors.append("LOG_GROUP_ID is missing (expected integer).")
-            warnings.append("LOG_GROUP_ID is not configured; forwarding destination is unavailable.")
+        if not settings.api_hash:
+            logger.warning("Missing API_HASH. Telegram client features are disabled.")
+            valid = False
 
-        is_valid = not errors
+        if not settings.log_group_id:
+            logger.warning("Missing LOG_GROUP_ID. Telegram forwarding is disabled.")
+            valid = False
+        elif not settings.log_group_id.startswith("-100"):
+            logger.warning("Invalid LOG_GROUP_ID format. It must start with '-100'.")
+            valid = False
 
-        if warnings:
-            for warning in warnings:
-                logger.warning("Config warning: %s", warning)
-
-        if errors:
-            logger.error("Config validation errors: %s", " | ".join(errors))
-            if raise_on_error:
-                raise ValueError("Missing or invalid environment variables: " + "; ".join(errors))
-
-        return ValidationResult(is_valid=is_valid, errors=errors, warnings=warnings)
-
-
-# Validate at import time, but never crash worker boot by default.
-CONFIG_VALIDATION = Config.validate(raise_on_error=False)
+        return valid
