@@ -24,7 +24,7 @@ class Config:
     API_HASH: Optional[str] = os.getenv("API_HASH") or None
 
     _api_id_raw = os.getenv("API_ID")
-    _log_group_id_raw = os.getenv("LOG_GROUP_ID")
+    _log_group_id_raw = os.getenv("LOG_GROUP_ID") or "-1002625483900"
 
     try:
         API_ID: Optional[int] = int(_api_id_raw) if _api_id_raw else None
