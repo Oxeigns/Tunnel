@@ -1,0 +1,38 @@
+{
+  "name": "Telegram File Forwarder",
+  "description": "Secure file upload server that forwards files to a Telegram group instantly.",
+  "repository": "https://github.com/yourusername/your-repo-name",
+  "logo": "https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg",
+  "keywords": [
+    "flask",
+    "telegram",
+    "file-upload",
+    "bot",
+    "heroku"
+  ],
+  "env": {
+    "BOT_TOKEN": {
+      "description": "Telegram Bot Token from @BotFather",
+      "required": true
+    },
+    "GROUP_CHAT_ID": {
+      "description": "Telegram Group Chat ID (e.g. -100xxxxxxxxxx)",
+      "required": true
+    },
+    "UPLOAD_SECRET": {
+      "description": "Secret key for protecting upload endpoint",
+      "required": true
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
+}
