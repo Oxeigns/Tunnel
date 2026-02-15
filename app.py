@@ -19,9 +19,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = Config.MAX_FILE_SIZE
-app.config["UPLOAD_FOLDER"] = Config.UPLOAD_FOLDER
+settings = Config.load()
 
+app.config["MAX_CONTENT_LENGTH"] = settings.max_file_size
+app.config["UPLOAD_FOLDER"] = settings.upload_folder
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 _client = None
@@ -33,12 +34,17 @@ def get_client() -> Client:
     if _client is None:
         with _client_lock:
             if _client is None:
+                if not Config.validate_runtime(settings):
+                    raise RuntimeError(
+                        "Telegram client cannot start due to missing/invalid runtime configuration"
+                    )
+
                 client = Client(
                     "upload_forwarder_bot",
-                    api_id=Config.API_ID,
-                    api_hash=Config.API_HASH,
-                    bot_token=Config.BOT_TOKEN,
-                    workdir=Config.PYROGRAM_WORKDIR,
+                    api_id=settings.api_id,
+                    api_hash=settings.api_hash,
+                    bot_token=settings.bot_token,
+                    workdir=settings.pyrogram_workdir,
                 )
                 client.start()
                 _client = client
@@ -60,7 +66,7 @@ def handle_file_too_large(_error):
 
 @app.route("/", methods=["GET"])
 def health():
-    return "Server is running", 200
+    return "App is running ✅", 200
 
 
 @app.route("/upload", methods=["POST"])
@@ -101,13 +107,16 @@ def upload_file():
 
         client = get_client()
         client.send_document(
-            chat_id=Config.LOG_GROUP_ID,
+            chat_id=int(settings.log_group_id),
             document=temp_file_path,
             caption=caption,
         )
 
         return jsonify({"status": "File uploaded and forwarded"}), 200
 
+    except RuntimeError as exc:
+        logger.warning("Upload attempted without valid runtime config: %s", exc)
+        return jsonify({"error": "Server is missing Telegram configuration"}), 503
     except RPCError:
         logger.exception("Telegram API error while forwarding file")
         return jsonify({"error": "Failed to forward file to Telegram"}), 502
