@@ -1,14 +1,35 @@
 {
-  "name": "Telegram File Forwarder",
-  "description": "Secure file upload server that forwards files to a Telegram group instantly.",
+  "name": "Public Telegram Upload Forwarder",
+  "description": "Public temporary upload server that forwards files to a Telegram log group.",
   "repository": "https://github.com/Oxeigns/Tunnel",
-  "logo": "https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg",
-  "keywords": ["flask", "telegram", "file-upload", "bot", "heroku"],
+  "keywords": ["flask", "pyrogram", "telegram", "upload", "heroku"],
   "env": {
-    "BOT_TOKEN": {"description": "Telegram Bot Token from @BotFather", "required": true},
-    "GROUP_CHAT_ID": {"description": "Telegram Group Chat ID (e.g. -100xxxxxxxxxx)", "required": true},
-    "UPLOAD_SECRET": {"description": "Secret key for protecting upload endpoint", "required": true}
+    "BOT_TOKEN": {
+      "description": "Telegram bot token from BotFather",
+      "required": true
+    },
+    "API_ID": {
+      "description": "Telegram API ID from my.telegram.org",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Telegram API hash from my.telegram.org",
+      "required": true
+    },
+    "LOG_GROUP_ID": {
+      "description": "Target Telegram log group ID (e.g. -100xxxxxxxxxx)",
+      "required": true
+    }
   },
-  "formation": {"web": {"quantity": 1, "size": "basic"}},
-  "buildpacks": [{"url": "heroku/python"}]
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
 }
