@@ -1,8 +1,8 @@
+import asyncio
 import logging
 import os
 import tempfile
 from datetime import datetime, timezone
-from threading import Lock
 
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -25,31 +25,25 @@ app.config["MAX_CONTENT_LENGTH"] = settings.max_file_size
 app.config["UPLOAD_FOLDER"] = settings.upload_folder
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-_client = None
-_client_lock = Lock()
+async def _forward_document(path: str, caption: str) -> None:
+    if not Config.validate_runtime(settings):
+        raise RuntimeError("Telegram forwarding configuration is missing or invalid")
+    # Each request owns its client and loop; no cross-thread client/session reuse.
+    async with asyncio.timeout(180):
+        async with Client(
+            "upload_forwarder_bot",
+            api_id=settings.api_id,
+            api_hash=settings.api_hash,
+            bot_token=settings.bot_token,
+            in_memory=True,
+        ) as client:
+            await client.send_document(
+                chat_id=int(settings.log_group_id), document=path, caption=caption
+            )
 
 
-def get_client() -> Client:
-    global _client
-    if _client is None:
-        with _client_lock:
-            if _client is None:
-                if not Config.validate_runtime(settings):
-                    raise RuntimeError(
-                        "Telegram client cannot start due to missing/invalid runtime configuration"
-                    )
-
-                client = Client(
-                    "upload_forwarder_bot",
-                    api_id=settings.api_id,
-                    api_hash=settings.api_hash,
-                    bot_token=settings.bot_token,
-                    workdir=settings.pyrogram_workdir,
-                )
-                client.start()
-                _client = client
-                logger.info("Pyrogram client started")
-    return _client
+def forward_document(path: str, caption: str) -> None:
+    asyncio.run(_forward_document(path, caption))
 
 
 def get_uploader_ip() -> str:
@@ -105,18 +99,15 @@ def upload_file():
             f"Timestamp: {timestamp}"
         )
 
-        client = get_client()
-        client.send_document(
-            chat_id=int(settings.log_group_id),
-            document=temp_file_path,
-            caption=caption,
-        )
+        forward_document(temp_file_path, caption)
 
         return jsonify({"status": "File uploaded and forwarded"}), 200
 
     except RuntimeError as exc:
         logger.warning("Upload attempted without valid runtime config: %s", exc)
         return jsonify({"error": "Server is missing Telegram configuration"}), 503
+    except TimeoutError:
+        return jsonify({"error": "Telegram forwarding timed out"}), 504
     except RPCError:
         logger.exception("Telegram API error while forwarding file")
         return jsonify({"error": "Failed to forward file to Telegram"}), 502
