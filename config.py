@@ -68,6 +68,10 @@ class Config:
         """Runtime validation that logs warnings instead of raising exceptions."""
         valid = True
 
+        if not settings.bot_token:
+            logger.warning("Missing BOT_TOKEN. Telegram forwarding is disabled.")
+            valid = False
+
         if settings.api_id is None:
             logger.warning("Missing or invalid API_ID. Telegram client features are disabled.")
             valid = False
